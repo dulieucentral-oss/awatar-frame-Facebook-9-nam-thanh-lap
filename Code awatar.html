@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tạo Avatar Frame Sự Kiện</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+        h1 { color: #333; margin-bottom: 5px; }
+        p { color: #666; margin-top: 0; margin-bottom: 20px; text-align: center; }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        /* Khu vực hiển thị Canvas */
+        #canvas-wrapper {
+            position: relative;
+            width: 350px;
+            height: 350px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #eef2f3;
+            margin-bottom: 20px;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            cursor: move;
+        }
+        /* Thanh điều khiển */
+        .controls {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            text-align: center;
+        }
+        .btn:hover { background-color: #0056b3; }
+        .btn-download { background-color: #28a745; display: none; }
+        .btn-download:hover { background-color: #218838; }
+        
+        .range-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #555;
+        }
+        .range-group input { flex: 1; }
+        
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>CHUNG TAY LAN TỎA SỰ KIỆN</h1>
+    <p>Tải ảnh của bạn lên, phóng to/thu nhỏ cho vừa vặn và tải về avatar mới nhé!</p>
+
+    <div class="container">
+        <div id="canvas-wrapper">
+            <canvas id="avatarCanvas" width="1080" height="1080"></canvas>
+        </div>
+
+        <div class="controls">
+            <label for="file-input" class="btn">1. Chọn ảnh của bạn</label>
+            <input type="file" id="file-input" accept="image/*">
+
+            <div class="range-group">
+                <label>Phóng to:</label>
+                <input type="range" id="zoom-slider" min="0.1" max="3" step="0.01" value="1" disabled>
+            </div>
+
+            <button id="download-btn" class="btn btn-download">2. Tải Avatar Về Máy</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('avatarCanvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('file-input');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const downloadBtn = document.getElementById('download-btn');
+
+        // ĐƯỜNG DẪN ĐẾN FILE KHUNG HÌNH (Thay bằng link ảnh khung hình .PNG của bạn)
+        const FRAME_SRC = 'https://i.imgur.com/7vj7w8E.png'; // Đây là file ảnh mẫu rỗng giữa
+
+        let userImg = new Image();
+        let frameImg = new Image();
+        let isImageLoaded = false;
+
+        // Tọa độ và kích thước của ảnh user trên canvas
+        let imgX = 540, imgY = 540; 
+        let imgScale = 1;
+        let isDragging = false;
+        let startX, startY;
+
+        // Tải khung hình sự kiện trước
+        frameImg.src = FRAME_SRC;
+        frameImg.crossOrigin = "anonymous"; // Tránh lỗi bảo mật CORS khi tải ảnh về
+        frameImg.onload = () => {
+            drawEverything();
+        };
+
+        // Xử lý khi người dùng chọn ảnh
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    userImg.src = event.target.result;
+                    userImg.onload = () => {
+                        isImageLoaded = true;
+                        zoomSlider.disabled = false;
+                        downloadBtn.style.display = 'block';
+                        
+                        // Đặt ảnh vào chính giữa canvas và tính toán scale mặc định
+                        imgX = canvas.width / 2;
+                        imgY = canvas.height / 2;
+                        
+                        // Ưu tiên fit ảnh theo chiều ngắn hơn
+                        let scaleX = canvas.width / userImg.width;
+                        let scaleY = canvas.height / userImg.height;
+                        imgScale = Math.max(scaleX, scaleY);
+                        
+                        zoomSlider.min = imgScale * 0.5;
+                        zoomSlider.max = imgScale * 3;
+                        zoomSlider.value = imgScale;
+
+                        drawEverything();
+                    };
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Hàm vẽ kết hợp ảnh user (ở dưới) và khung hình (ở trên)
+        function drawEverything() {
+            // Xóa canvas cũ
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Vẽ ảnh của người dùng trước
+            if (isImageLoaded) {
+                ctx.save();
+                ctx.translate(imgX, imgY);
+                ctx.scale(imgScale, imgScale);
+                // Vẽ tâm ảnh trùng với điểm translate
+                ctx.drawImage(userImg, -userImg.width / 2, -userImg.height / 2);
+                ctx.restore();
+            } else {
+                // Nếu chưa có ảnh, vẽ chữ hướng dẫn tạm thời
+                ctx.fillStyle = "#999999";
+                ctx.font = "30px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("Chưa chọn ảnh đại diện", canvas.width / 2, canvas.height / 2);
+            }
+
+            // 2. Vẽ đè khung hình sự kiện lên trên
+            ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
+        }
+
+        // Xử lý thanh kéo Zoom
+        zoomSlider.addEventListener('input', (e) => {
+            if (!isImageLoaded) return;
+            imgScale = parseFloat(e.target.value);
+            drawEverything();
+        });
+
+        // XỬ LÝ DI CHUYỂN ẢNH (KÉO THẢ BẰNG CHUỘT HOẶC TAY)
+        function getEventPos(e) {
+            let rect = canvas.getBoundingClientRect();
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            // Quy đổi tọa độ hiển thị trên màn hình về tọa độ gốc 1080x1080 của Canvas
+            return {
+                x: (clientX - rect.left) * (canvas.width / rect.width),
+                y: (clientY - rect.top) * (canvas.height / rect.height)
+            };
+        }
+
+        function startDrag(e) {
+            if (!isImageLoaded) return;
+            isDragging = true;
+            let pos = getEventPos(e);
+            startX = pos.x - imgX;
+            startY = pos.y - imgY;
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            let pos = getEventPos(e);
+            imgX = pos.x - startX;
+            imgY = pos.y - startY;
+            drawEverything();
+        }
+
+        function stopDrag() { isDragging = false; }
+
+        // Sự kiện chuột
+        canvas.addEventListener('mousedown', startDrag);
+        canvas.addEventListener('mousemove', drag);
+        window.addEventListener('mouseup', stopDrag);
+
+        // Sự kiện cảm ứng điện thoại
+        canvas.addEventListener('touchstart', startDrag);
+        canvas.addEventListener('touchmove', drag, { passive: false });
+        window.addEventListener('touchend', stopDrag);
+
+        // XỬ LÝ TẢI ẢNH XUỐNG
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'avatar-su-kien.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+    </script>
+</body>
+</html>
